@@ -65,7 +65,7 @@
 
         // 1. 原始訂單試算表的 Google Sheets API 連結
         //    請替換為你的試算表 URL
-        const ORIGINAL_SHEET_URL = "https://docs.google.com/spreadsheets/d/1GHpU6B0gaPvIUZTarSIN_geddThGLYG9kkodNYARo3c/edit?usp=sharing";
+        const ORIGINAL_SHEET_URL = "https://docs.google.com/spreadsheets/d/1GHpU6B0gaPvIUZTarSIN_geddThGLYG9kkodNYARo3c/gviz/tq?tqx=out:csv";
         
         // 2. 歷史訂單表單的 Google Form 提交 URL
         //    如何取得：
@@ -74,7 +74,7 @@
         //    - 選擇「< >」符號 (內嵌 HTML)。
         //    - 複製 `<form>` 標籤中的 `action` 屬性值，並貼到下方。
         //    - 範例: const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSe-xxxxxx-xxxxxx/formResponse";
-        const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdTf1vWgXAch5YZkBKUX9VJyov6FqjoitHGBa8nBjZjVFl0PA/viewform?embedded=true";
+        const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdTf1vWgXAch5YZkBKUX9VJyov6FqjoitHGBa8nBjZjVFl0PA/formResponse";
         
         // 3. 歷史訂單表單的欄位名稱 (name attribute)
         //    如何取得：
@@ -92,7 +92,7 @@
         // 4. 歷史訂單試算表的 Google Sheets API 連結
         //    這是用來讀取已處理訂單的資料源。
         //    請替換為你歷史訂單試算表的 URL。
-        const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1xD4X9yGZtEWzU8badXjUWleAaqIxK424ivXkTtdl2SA/edit?resourcekey=&gid=1893877126#gid=1893877126";
+        const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1xD4X9yGZtEWzU8badXjUWleAaqIxK424ivXkTtdl2SA/gviz/tq?tqx=out:csv&gid=1893877126";
 
 
         // =================================================================
@@ -330,3 +330,4 @@
     </script>
 </body>
 </html>
+
