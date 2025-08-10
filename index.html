@@ -15,42 +15,59 @@
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 p-4 min-h-screen flex flex-col items-center">
-    <!-- Main App Container -->
+    <!-- 主應用程式容器 -->
     <div class="container mx-auto max-w-4xl p-4 bg-white shadow-xl rounded-xl">
         
-        <!-- Header with tabs and revenue display -->
+        <!-- 標頭區塊：包含分頁與今日營業額 -->
         <header class="flex flex-col md:flex-row justify-between items-center mb-6">
             <h1 class="text-3xl font-bold text-gray-900 mb-4 md:mb-0">訂單管理系統</h1>
             
+            <!-- 分頁按鈕 -->
             <div class="flex-grow flex justify-center md:justify-start">
                 <button id="mainPageTab" class="bg-indigo-500 text-white px-6 py-2 rounded-full font-medium transition-colors hover:bg-indigo-600 mr-2">主頁面</button>
                 <button id="historyPageTab" class="bg-gray-300 text-gray-700 px-6 py-2 rounded-full font-medium transition-colors hover:bg-gray-400">歷史訂單</button>
             </div>
             
+            <!-- 今日營業額顯示 -->
             <div class="flex items-center space-x-2 bg-green-100 text-green-700 font-bold px-4 py-2 rounded-lg shadow-md mt-4 md:mt-0">
                 <span>今日營業額:</span>
                 <span id="todaysRevenue" class="text-xl">載入中...</span>
             </div>
         </header>
 
-        <!-- Main Orders List Section -->
+        <!-- 新增刷新頻率控制區塊 -->
+        <div class="flex items-center justify-center space-x-2 mb-6">
+            <label for="refreshRate" class="font-medium text-gray-700">自動刷新頻率:</label>
+            <select id="refreshRate" class="py-1 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="1000">1 秒</option>
+                <option value="5000" selected>5 秒</option>
+                <option value="15000">15 秒</option>
+                <option value="30000">30 秒</option>
+            </select>
+        </div>
+
+        <!-- 主頁面訂單列表區塊 -->
         <main id="mainPage" class="space-y-4">
+            <!-- 將載入訊息移到 ordersList 外面，避免被清除 -->
+            <p id="loadingMessage" class="text-center text-gray-500">載入中，請稍候...</p>
             <div id="ordersList" class="grid gap-4">
-                <p id="loadingMessage" class="text-center text-gray-500">載入中，請稍候...</p>
+                <!-- 訂單卡片會在這裡動態生成 -->
             </div>
         </main>
         
-        <!-- History Orders List Section -->
+        <!-- 歷史訂單列表區塊 -->
         <main id="historyPage" class="space-y-4 hidden">
             <h2 class="text-2xl font-semibold text-gray-900 mb-4">歷史訂單</h2>
+            <!-- 將載入訊息移到 historyList 外面，避免被清除 -->
+            <p id="historyLoadingMessage" class="text-center text-gray-500">載入中，請稍候...</p>
             <div id="historyList" class="grid gap-4">
-                <p id="historyLoadingMessage" class="text-center text-gray-500">載入中，請稍候...</p>
+                <!-- 歷史訂單卡片會在這裡動態生成 -->
             </div>
         </main>
 
     </div>
 
-    <!-- Message Modal -->
+    <!-- 訊息模態框 -->
     <div id="modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 transition-opacity duration-300">
         <div class="bg-white rounded-lg p-6 w-80 shadow-lg transform scale-95 transition-transform duration-300">
             <p id="modalMessage" class="text-center text-lg font-medium text-gray-700 mb-4"></p>
@@ -62,41 +79,31 @@
         // =================================================================
         // ** 重要設定：請依據你的 Google Sheets 與 Google Forms 進行修改 **
         // =================================================================
-
+        
         // 1. 原始訂單試算表的 Google Sheets API 連結
-        //    請替換為你的試算表 URL
+        // 這是使用者從表單提交訂單後，Google Sheet 自動產生的試算表連結。
         const ORIGINAL_SHEET_URL = "https://docs.google.com/spreadsheets/d/1GHpU6B0gaPvIUZTarSIN_geddThGLYG9kkodNYARo3c/gviz/tq?tqx=out:csv";
         
         // 2. 歷史訂單表單的 Google Form 提交 URL
-        //    如何取得：
-        //    - 進入你的 Google 表單編輯頁面。
-        //    - 點選右上角的「傳送」。
-        //    - 選擇「< >」符號 (內嵌 HTML)。
-        //    - 複製 `<form>` 標籤中的 `action` 屬性值，並貼到下方。
-        //    - 範例: const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSe-xxxxxx-xxxxxx/formResponse";
+        // 這是我們將已處理（已出餐或已取消）的訂單提交過去的表單連結。
         const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdTf1vWgXAch5YZkBKUX9VJyov6FqjoitHGBa8nBjZjVFl0PA/formResponse";
         
         // 3. 歷史訂單表單的欄位名稱 (name attribute)
-        //    如何取得：
-        //    - 在表單編輯頁面，右鍵點擊每個問題的輸入框，選擇「檢查」(Inspect)。
-        //    - 找到 `<input>`、`<select>` 或 `<textarea>` 標籤。
-        //    - 複製 `name` 屬性的值，通常格式為 "entry.xxxxxxxxxx"。
+        // 請務必檢查這些欄位名稱是否與你的 Google Form 實際欄位名稱相符！
         const FORM_FIELD_MAPPING = {
-            orderId: 'entry.2106562066',      // 訂單編號
-            mealName: 'entry.99877156',     // 餐點名稱
-            price: 'entry.1051405435',       // 價格
-            status: 'entry.1208958934',       // 狀態 (已出餐/已取消)
-            timestamp: 'entry.1529076249'    // 訂單時間戳 (用來唯一識別訂單)
+            orderId: 'entry.2106562066', 
+            mealName: 'entry.99877156', 
+            price: 'entry.1051405435', 
+            status: 'entry.1208958934', 
+            timestamp: 'entry.1529076249' 
         };
         
         // 4. 歷史訂單試算表的 Google Sheets API 連結
-        //    這是用來讀取已處理訂單的資料源。
-        //    請替換為你歷史訂單試算表的 URL。
+        // 這是 Google Form 回應產生的歷史訂單試算表連結。
         const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1xD4X9yGZtEWzU8badXjUWleAaqIxK424ivXkTtdl2SA/gviz/tq?tqx=out:csv&gid=1893877126";
 
-
         // =================================================================
-        // ** 程式碼邏輯，請勿修改 **
+        // ** 程式碼邏輯，已修正錯誤並優化 **
         // =================================================================
 
         const mainPage = document.getElementById('mainPage');
@@ -109,10 +116,20 @@
         const modal = document.getElementById('modal');
         const modalMessage = document.getElementById('modalMessage');
         const modalCloseBtn = document.getElementById('modalCloseBtn');
+        const refreshRateSelect = document.getElementById('refreshRate'); // 新增選單元素
         
-        let allOrders = [];
+        // 新增變數以引用載入訊息元素
+        const loadingMessageEl = document.getElementById('loadingMessage');
+        const historyLoadingMessageEl = document.getElementById('historyLoadingMessage');
+        
+        let allOrders = []; 
         let processedOrders = [];
         let loadingState = false;
+
+        // 新增快照變數，用於比對資料變化
+        let lastAllOrders = JSON.stringify([]);
+        let lastProcessedOrders = JSON.stringify([]);
+        let refreshIntervalId; // 用於儲存 setInterval 的 ID
 
         // 顯示訊息模態框
         const showModal = (message) => {
@@ -135,98 +152,231 @@
         };
         modalCloseBtn.addEventListener('click', hideModal);
 
-        // 處理 HTTP 請求並解析 CSV
-        const fetchCSV = async (url) => {
-            try {
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
+        // 處理 HTTP 請求並解析 CSV，加入指數退避重試
+        const fetchCSV = async (url, retries = 3, delay = 1000) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const cacheBustingUrl = `${url}&t=${Date.now()}`;
+                    const response = await fetch(cacheBustingUrl);
+                    if (!response.ok) {
+                        throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
+                    }
+                    const text = await response.text();
+                    const lines = text.split('\n').filter(line => line.trim() !== '');
+                    if (lines.length <= 1) {
+                        return [];
+                    }
+                    
+                    const firstLine = lines[0].startsWith('\ufeff') ? lines[0].substring(1) : lines[0];
+                    const headers = firstLine.split(',').map(header => header.trim().replace(/\"/g, ''));
+                    
+                    return lines.slice(1).map(line => {
+                        // 使用正規表達式處理帶有逗號的欄位，例如 "餐點明細"
+                        const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+                        if (!values || values.length !== headers.length) {
+                             console.warn('忽略不完整或格式錯誤的行:', line);
+                            return null;
+                        }
+                        return headers.reduce((obj, header, index) => {
+                            const value = values[index] ? values[index].trim().replace(/^"|"$/g, '') : '';
+                            obj[header] = value;
+                            return obj;
+                        }, {});
+                    }).filter(Boolean);
+                } catch (error) {
+                    console.error(`讀取試算表失敗 (第 ${i + 1} 次嘗試):`, error);
+                    if (i < retries - 1) {
+                        await new Promise(res => setTimeout(res, delay * Math.pow(2, i)));
+                    } else {
+                        throw error;
+                    }
                 }
-                const text = await response.text();
-                // 使用 headers 和 data 來解析 CSV 格式
-                const lines = text.split('\n').filter(line => line.trim() !== '');
-                const headers = lines[0].split(',').map(header => header.trim());
-                return lines.slice(1).map(line => {
-                    const values = line.split(',').map(value => value.trim());
-                    return headers.reduce((obj, header, index) => {
-                        obj[header] = values[index];
-                        return obj;
-                    }, {});
-                });
-            } catch (error) {
-                console.error('讀取試算表失敗:', error);
-                showModal('讀取資料失敗，請檢查網路或試算表 URL。');
-                return [];
             }
         };
 
-        // 獲取所有訂單數據
+        // 格式化 Google Sheets 的日期時間字串為 Date 物件
+        const parseGoogleSheetTimestamp = (timestamp) => {
+            if (!timestamp) return null;
+            // 處理 "2025/8/10 下午 6:07:56" 這樣的格式
+            const parts = timestamp.split(' ');
+            if (parts.length < 3) {
+                // 處理可能來自 Google Form 的格式，例如 "2025/8/10 18:07:56"
+                const dateParts = timestamp.split(/[\s/:]/);
+                if (dateParts.length >= 6) {
+                    return new Date(dateParts[0], dateParts[1]-1, dateParts[2], dateParts[3], dateParts[4], dateParts[5]);
+                }
+                return new Date(timestamp); // 如果格式不符，嘗試直接解析
+            }
+
+            const datePart = parts[0];
+            const ampmPart = parts[1];
+            const timePart = parts[2];
+            
+            const [year, month, day] = datePart.split('/');
+            let [hour, minute, second] = timePart.split(':');
+            
+            hour = parseInt(hour, 10);
+            if (ampmPart === '下午' && hour !== 12) {
+                hour += 12;
+            } else if (ampmPart === '上午' && hour === 12) {
+                hour = 0;
+            }
+
+            const formattedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${minute}:${second}`;
+            return new Date(formattedDate);
+        };
+        
+        // 格式化為 "下午 8:52:43" 格式
+        const formatTimestampForDisplay = (timestamp) => {
+            if (!timestamp) return '';
+            const date = parseGoogleSheetTimestamp(timestamp);
+            if (!date) return timestamp;
+
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            let hour = date.getHours();
+            const minute = String(date.getMinutes()).padStart(2, '0');
+            const second = String(date.getSeconds()).padStart(2, '0');
+            let ampm = '上午';
+
+            if (hour >= 12) {
+                ampm = '下午';
+                if (hour > 12) {
+                    hour -= 12;
+                }
+            } else if (hour === 0) {
+                hour = 12;
+            }
+            
+            return `${year}/${month}/${day} ${ampm} ${hour}:${minute}:${second}`;
+        };
+
+        // 獲取所有訂單數據並檢查是否有變化
         const fetchData = async () => {
             if (loadingState) return;
             loadingState = true;
-            document.getElementById('loadingMessage').classList.remove('hidden');
-            document.getElementById('historyLoadingMessage').classList.remove('hidden');
-
+            
+            // 首次載入時顯示載入訊息
+            if (ordersList.innerHTML === '') {
+                loadingMessageEl.classList.remove('hidden');
+            }
+            if (historyList.innerHTML === '') {
+                historyLoadingMessageEl.classList.remove('hidden');
+            }
+            
             try {
                 const [originalData, historyData] = await Promise.all([
                     fetchCSV(ORIGINAL_SHEET_URL),
                     fetchCSV(HISTORY_SHEET_URL)
                 ]);
 
-                allOrders = originalData;
-                processedOrders = historyData;
+                const newAllOrders = originalData.map(order => {
+                    return {
+                        '時間戳記': order['時間戳記'],
+                        '手機末四碼': order['手機末四碼'] || order['手機末4碼'] || '', 
+                        '餐點明細': order['餐點明細'] || order['訂餐明細'] || '', 
+                        '總金額': order['總金額'] || order['價格'] || '0', 
+                    }
+                }).filter(order => order['時間戳記']); 
 
-                renderUI();
+                const newProcessedOrders = historyData.filter(order => order['時間戳記']).map(order => {
+                    const orderIdParts = (order['手機末四碼'] || '').split('_');
+                    const originalTimestampFromId = orderIdParts.length > 1 ? orderIdParts.slice(1).join('_') : '';
+                    
+                    return {
+                        '訂單時間戳記': order['時間戳記'],
+                        '訂單編號': orderIdParts[0] || '???',
+                        '原始時間戳記': originalTimestampFromId,
+                        '餐點名稱': order['餐點明細'],
+                        '價格': order['總金額'],
+                        '狀態': order['狀態 (已出餐/已取消)'],
+                    };
+                });
+                
+                // 檢查數據是否有變化，只在有變化時才更新 UI
+                const currentAllOrders = JSON.stringify(newAllOrders);
+                const currentProcessedOrders = JSON.stringify(newProcessedOrders);
+
+                if (currentAllOrders !== lastAllOrders || currentProcessedOrders !== lastProcessedOrders) {
+                    allOrders = newAllOrders;
+                    processedOrders = newProcessedOrders;
+                    renderUI();
+                    
+                    // 更新快照
+                    lastAllOrders = currentAllOrders;
+                    lastProcessedOrders = currentProcessedOrders;
+                }
+
+            } catch (error) {
+                console.error('讀取資料失敗:', error);
+                showModal('讀取資料失敗，請檢查網路或試算表 URL。');
             } finally {
                 loadingState = false;
-                document.getElementById('loadingMessage').classList.add('hidden');
-                document.getElementById('historyLoadingMessage').classList.add('hidden');
+                // 確保在首次載入後隱藏載入訊息
+                loadingMessageEl.classList.add('hidden');
+                historyLoadingMessageEl.classList.add('hidden');
             }
         };
         
         // 提交訂單狀態到 Google Form
-        const submitToForm = async (order, status) => {
-            if (!FORM_ACTION_URL || Object.values(FORM_FIELD_MAPPING).some(val => !val)) {
-                showModal('請先在程式碼中設定 Google 表單的 URL 與欄位名稱！');
-                return;
+        const submitToForm = async (order, status, button) => {
+            if (button) {
+                button.disabled = true;
+                button.textContent = '提交中...';
             }
 
+            const orderTimestamp = order['時間戳記'];
+            const orderMealName = order['餐點明細'] || ''; 
+            const orderPrice = order['總金額'] || '';
+            const orderTableNumber = order['手機末四碼'] || '';
+
+            // 提交到表單時，將原始時間戳記與手機末四碼組合
+            const formOrderId = `${orderTableNumber}_${orderTimestamp}`;
+            
             const formData = new FormData();
-            formData.append(FORM_FIELD_MAPPING.orderId, order['訂單編號']);
-            formData.append(FORM_FIELD_MAPPING.mealName, order['餐點名稱']);
-            formData.append(FORM_FIELD_MAPPING.price, order['價格']);
+            formData.append(FORM_FIELD_MAPPING.orderId, formOrderId);
+            formData.append(FORM_FIELD_MAPPING.mealName, orderMealName);
+            formData.append(FORM_FIELD_MAPPING.price, orderPrice);
             formData.append(FORM_FIELD_MAPPING.status, status);
-            formData.append(FORM_FIELD_MAPPING.timestamp, order['時間戳']);
+            formData.append(FORM_FIELD_MAPPING.timestamp, orderTimestamp);
 
             try {
+                showModal('提交中...請稍候');
                 await fetch(FORM_ACTION_URL, {
                     method: 'POST',
                     body: formData,
-                    mode: 'no-cors' // 必須設定為 no-cors 才能成功提交到 Google 表單
+                    mode: 'no-cors' 
                 });
-                showModal(`已成功將訂單狀態提交至表單。`);
-                // 提交成功後重新載入資料以更新 UI
-                setTimeout(fetchData, 1000);
+
+                await fetchData();
+                showModal(`已成功提交訂單狀態為「${status}」!`);
             } catch (error) {
                 console.error('提交表單失敗:', error);
-                showModal('提交表單時發生錯誤，請稍後再試。');
+                showModal('提交表單時發生錯誤，請檢查網路或表單設定。');
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = (status === '已出餐') ? '確認出餐' : '刪除餐點';
+                }
             }
         };
 
         // 渲染主頁面與歷史訂單頁面的 UI
         const renderUI = () => {
-            // 找出已處理的訂單ID
-            const processedTimestamps = new Set(processedOrders.map(order => order['時間戳']));
+             // 使用原始時間戳記進行比對
+            const processedTimestamps = new Set(processedOrders.map(order => {
+                // 將歷史訂單的原始時間戳記轉換為統一的格式
+                return formatTimestampForDisplay(order['原始時間戳記']);
+            }).filter(Boolean));
 
-            // 篩選出未處理和已處理的訂單
-            const pendingOrders = allOrders.filter(order => !processedTimestamps.has(order['時間戳']));
-            const confirmedOrDeletedOrders = allOrders.filter(order => processedTimestamps.has(order['時間戳']));
-
-            // 渲染主頁面訂單
+            const pendingOrders = allOrders.filter(order => {
+                const originalTimestampFormatted = formatTimestampForDisplay(order['時間戳記']);
+                return originalTimestampFormatted && !processedTimestamps.has(originalTimestampFormatted);
+            });
+            
             renderOrders(pendingOrders, ordersList, false);
-            // 渲染歷史訂單
-            renderOrders(confirmedOrDeletedOrders, historyList, true);
-            // 計算並顯示營業額
+            renderOrders(processedOrders, historyList, true);
             renderTodaysRevenue();
         };
 
@@ -237,30 +387,49 @@
                 container.innerHTML = `<p class="text-center text-gray-500 py-4">${message}</p>`;
                 return;
             }
+            
+            if (isHistory) {
+                 orders.sort((a, b) => {
+                    const dateA = parseGoogleSheetTimestamp(a['訂單時間戳記']);
+                    const dateB = parseGoogleSheetTimestamp(b['訂單時間戳記']);
+                    return dateB - dateA;
+                });
+            } else {
+                orders.sort((a, b) => {
+                    const dateA = parseGoogleSheetTimestamp(a['時間戳記']);
+                    const dateB = parseGoogleSheetTimestamp(b['時間戳記']);
+                    return dateA - dateB;
+                });
+            }
 
             orders.forEach(order => {
-                const historyStatus = processedOrders.find(p => p['時間戳'] === order['時間戳'])?.['狀態'] || '';
-                const isConfirmed = historyStatus === '已出餐';
+                const orderTimestamp = isHistory ? order['訂單時間戳記'] : order['時間戳記']; 
+                const orderMealName = isHistory ? order['餐點名稱'] : order['餐點明細'] || '未提供';
+                const orderPrice = isHistory ? order['價格'] : order['總金額'] || '0';
+                const orderTableNumber = isHistory ? (order['訂單編號'] ? order['訂單編號'] : '???') : (order['手機末四碼'] || '???');
+                const historyStatus = isHistory ? order['狀態'] : '';
                 const isDeleted = historyStatus === '已取消';
 
+                const displayTimestamp = isHistory ? orderTimestamp : formatTimestampForDisplay(orderTimestamp);
+                
                 const orderCard = document.createElement('div');
                 orderCard.className = `bg-white p-6 rounded-xl shadow-md transition-shadow hover:shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center ${isDeleted ? 'bg-red-100' : ''}`;
                 orderCard.innerHTML = `
                     <div class="flex-grow mb-4 md:mb-0">
                         <div class="flex items-center space-x-2 text-xl font-bold">
-                            <span class="text-indigo-500">#${order['訂單編號']}</span>
-                            <span>桌號: ${order['桌號']}</span>
+                            <span class="text-blue-600">#${orderTableNumber}</span>
+                            <span class="text-gray-900">${displayTimestamp}</span>
                             ${isHistory ? `<span class="text-sm font-normal ml-2 py-1 px-2 rounded-full text-white ${isDeleted ? 'bg-red-500' : 'bg-green-500'}">${historyStatus}</span>` : ''}
                         </div>
-                        <p class="text-gray-600 mt-2">餐點名稱: ${order['餐點名稱']}</p>
-                        <p class="text-lg font-semibold text-gray-900">價格: NT$${order['價格']}</p>
+                        <p class="text-gray-600 mt-2">餐點明細: ${orderMealName}</p>
+                        <p class="text-lg font-semibold text-gray-900">價格: NT$${orderPrice}</p>
                     </div>
-                    <div class="flex space-x-2">
+                    <div class="flex space-x-2 w-full md:w-auto flex-shrink-0">
                         ${!isHistory ? `
-                            <button class="confirmBtn bg-green-500 text-white font-bold py-2 px-4 rounded-full transition-transform hover:scale-105 active:scale-95 shadow-md" data-timestamp="${order['時間戳']}">
+                            <button class="confirmBtn bg-green-500 text-white font-bold py-2 px-4 rounded-full transition-transform hover:scale-105 active:scale-95 shadow-md" data-timestamp="${order['時間戳記']}">
                                 確認出餐
                             </button>
-                            <button class="deleteBtn bg-red-500 text-white font-bold py-2 px-4 rounded-full transition-transform hover:scale-105 active:scale-95 shadow-md" data-timestamp="${order['時間戳']}">
+                            <button class="deleteBtn bg-red-500 text-white font-bold py-2 px-4 rounded-full transition-transform hover:scale-105 active:scale-95 shadow-md" data-timestamp="${order['時間戳記']}">
                                 刪除餐點
                             </button>
                         ` : ''}
@@ -269,23 +438,22 @@
                 container.appendChild(orderCard);
             });
 
-            // 綁定事件監聽器
             if (!isHistory) {
                 container.querySelectorAll('.confirmBtn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         const timestamp = e.target.dataset.timestamp;
-                        const orderToProcess = allOrders.find(o => o['時間戳'] === timestamp);
+                        const orderToProcess = allOrders.find(o => o['時間戳記'] === timestamp);
                         if (orderToProcess) {
-                            submitToForm(orderToProcess, '已出餐');
+                            submitToForm(orderToProcess, '已出餐', e.target);
                         }
                     });
                 });
                 container.querySelectorAll('.deleteBtn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         const timestamp = e.target.dataset.timestamp;
-                        const orderToProcess = allOrders.find(o => o['時間戳'] === timestamp);
+                        const orderToProcess = allOrders.find(o => o['時間戳記'] === timestamp);
                         if (orderToProcess) {
-                            submitToForm(orderToProcess, '已取消');
+                            submitToForm(orderToProcess, '已取消', e.target);
                         }
                     });
                 });
@@ -293,19 +461,27 @@
         };
 
         const renderTodaysRevenue = () => {
-            const today = new Date().toISOString().split('T')[0];
+            const today = new Date().toLocaleDateString('zh-TW');
+            
             const todaysConfirmedOrders = processedOrders.filter(order => {
-                const orderDate = order['時間戳'] ? new Date(order['時間戳']).toISOString().split('T')[0] : '';
-                return orderDate === today && order['狀態'] === '已出餐';
+                const orderTimestamp = order['訂單時間戳記']; 
+                if (!orderTimestamp) return false;
+                
+                const date = parseGoogleSheetTimestamp(orderTimestamp);
+                if (isNaN(date.getTime())) return false;
+                
+                const formattedOrderDate = date.toLocaleDateString('zh-TW');
+                return formattedOrderDate === today && order['狀態'] === '已出餐';
             });
+            
             const totalRevenue = todaysConfirmedOrders.reduce((sum, order) => {
                 const price = parseFloat(order['價格']) || 0;
                 return sum + price;
             }, 0);
+            
             todaysRevenueEl.textContent = `NT$${totalRevenue.toLocaleString()}`;
         };
 
-        // Tab 切換功能
         const switchTab = (activeTab, inactiveTab, activePage, inactivePage) => {
             activeTab.classList.remove('bg-gray-300', 'text-gray-700');
             activeTab.classList.add('bg-indigo-500', 'text-white');
@@ -315,6 +491,18 @@
             inactivePage.classList.add('hidden');
         };
 
+        // 重新設定自動刷新
+        const setRefreshInterval = (interval) => {
+            clearInterval(refreshIntervalId); // 清除舊的計時器
+            refreshIntervalId = setInterval(fetchData, interval); // 設定新的計時器
+        };
+
+        // 監聽刷新頻率選單的變化
+        refreshRateSelect.addEventListener('change', (e) => {
+            const newInterval = parseInt(e.target.value, 10);
+            setRefreshInterval(newInterval);
+        });
+
         mainPageTab.addEventListener('click', () => {
             switchTab(mainPageTab, historyPageTab, mainPage, historyPage);
         });
@@ -323,13 +511,11 @@
             switchTab(historyPageTab, mainPageTab, historyPage, mainPage);
         });
 
-        // 初始載入資料
-        window.onload = fetchData;
-        // 定時刷新資料，例如每 30 秒
-        setInterval(fetchData, 30000);
+        window.onload = () => {
+            fetchData();
+            // 初始設定為 5 秒刷新
+            setRefreshInterval(5000); 
+        };
     </script>
 </body>
 </html>
-
-
-
