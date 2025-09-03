@@ -89,13 +89,14 @@
         const FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdTf1vWgXAch5YZkBKUX9VJyov6FqjoitHGBa8nBjZjVFl0PA/formResponse";
         
         // 3. 歷史訂單表單的欄位名稱 (name attribute)
-        // 請務必檢查這些欄位名稱是否與你的 Google Form 實際欄位名稱相符！
+        // !!重要!! 已將「折扣」欄位名稱替換為你的表單實際值。
         const FORM_FIELD_MAPPING = {
             orderId: 'entry.2106562066', 
             mealName: 'entry.99877156', 
             price: 'entry.1051405435', 
             status: 'entry.1208958934', 
-            timestamp: 'entry.1529076249' 
+            timestamp: 'entry.1529076249',
+            discount: 'entry.2101840873' // 已更新為正確的「折扣」欄位名稱
         };
         
         // 4. 歷史訂單試算表的 Google Sheets API 連結
@@ -291,6 +292,7 @@
                         '餐點名稱': order['餐點明細'],
                         '價格': order['總金額'],
                         '狀態': order['狀態 (已出餐/已取消)'],
+                        '折扣': order['折扣'], // 讀取新的折扣欄位
                     };
                 });
                 
@@ -320,16 +322,12 @@
         };
         
         // 提交訂單狀態到 Google Form
-        const submitToForm = async (order, status, button) => {
-            if (button) {
-                button.disabled = true;
-                button.textContent = '提交中...';
-            }
-
+        const submitToForm = async (order, status) => {
             const orderTimestamp = order['時間戳記'];
             const orderMealName = order['餐點明細'] || ''; 
-            const orderPrice = order['總金額'] || '';
+            const orderPrice = order.finalPrice; // 使用經過折扣計算的最終價格
             const orderTableNumber = order['手機末四碼'] || '';
+            const orderDiscount = order.discountValue; // 新增：獲取折扣值
 
             // 提交到表單時，將原始時間戳記與手機末四碼組合
             const formOrderId = `${orderTableNumber}_${orderTimestamp}`;
@@ -340,6 +338,7 @@
             formData.append(FORM_FIELD_MAPPING.price, orderPrice);
             formData.append(FORM_FIELD_MAPPING.status, status);
             formData.append(FORM_FIELD_MAPPING.timestamp, orderTimestamp);
+            formData.append(FORM_FIELD_MAPPING.discount, orderDiscount); // 新增：提交折扣值
 
             try {
                 showModal('提交中...請稍候');
@@ -354,11 +353,6 @@
             } catch (error) {
                 console.error('提交表單失敗:', error);
                 showModal('提交表單時發生錯誤，請檢查網路或表單設定。');
-            } finally {
-                if (button) {
-                    button.disabled = false;
-                    button.textContent = (status === '已出餐') ? '確認出餐' : '刪除餐點';
-                }
             }
         };
 
@@ -389,7 +383,7 @@
             }
             
             if (isHistory) {
-                 orders.sort((a, b) => {
+                orders.sort((a, b) => {
                     const dateA = parseGoogleSheetTimestamp(a['訂單時間戳記']);
                     const dateB = parseGoogleSheetTimestamp(b['訂單時間戳記']);
                     return dateB - dateA;
@@ -409,9 +403,23 @@
                 const orderTableNumber = isHistory ? (order['訂單編號'] ? order['訂單編號'] : '???') : (order['手機末四碼'] || '???');
                 const historyStatus = isHistory ? order['狀態'] : '';
                 const isDeleted = historyStatus === '已取消';
+                
+                // 將原始價格儲存在資料物件中，以利後續計算
+                order.originalPrice = parseFloat(orderPrice) || 0;
+                order.finalPrice = order.originalPrice;
+                order.discountValue = 10;
 
                 const displayTimestamp = isHistory ? orderTimestamp : formatTimestampForDisplay(orderTimestamp);
                 
+                const discountValueFromHistory = isHistory ? order['折扣'] : '10';
+                const isDiscounted = parseInt(discountValueFromHistory, 10) < 10;
+
+                // 根據折扣值生成紅色的折扣標籤
+                const discountLabel = isDiscounted ? `
+                    <span class="text-xs font-normal ml-2 py-0.5 px-2 rounded-full text-white bg-red-500">
+                        ${parseInt(discountValueFromHistory, 10)}折
+                    </span>` : '';
+
                 const orderCard = document.createElement('div');
                 orderCard.className = `bg-white p-6 rounded-xl shadow-md transition-shadow hover:shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center ${isDeleted ? 'bg-red-100' : ''}`;
                 orderCard.innerHTML = `
@@ -419,13 +427,31 @@
                         <div class="flex items-center space-x-2 text-xl font-bold">
                             <span class="text-blue-600">#${orderTableNumber}</span>
                             <span class="text-gray-900">${displayTimestamp}</span>
+                            <!-- 顯示歷史訂單狀態，如果是已出餐則會顯示綠色標籤，已取消則顯示紅色標籤 -->
                             ${isHistory ? `<span class="text-sm font-normal ml-2 py-1 px-2 rounded-full text-white ${isDeleted ? 'bg-red-500' : 'bg-green-500'}">${historyStatus}</span>` : ''}
+                            <!-- 在狀態標籤旁邊顯示紅色折扣標籤 -->
+                            ${isHistory ? discountLabel : ''}
                         </div>
                         <p class="text-gray-600 mt-2">餐點明細: ${orderMealName}</p>
-                        <p class="text-lg font-semibold text-gray-900">價格: NT$${orderPrice}</p>
+                        <p class="text-lg font-semibold text-gray-900">價格: <span class="priceDisplay">NT$${parseFloat(orderPrice).toLocaleString()}</span></p>
                     </div>
-                    <div class="flex space-x-2 w-full md:w-auto flex-shrink-0">
+                    <div class="flex flex-col space-y-2 w-full md:w-auto flex-shrink-0">
                         ${!isHistory ? `
+                            <div class="flex items-center space-x-2">
+                                <label for="discount-${orderTimestamp}" class="text-gray-700 font-medium whitespace-nowrap">折扣：</label>
+                                <select id="discount-${orderTimestamp}" class="discountSelect py-1 px-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 w-full">
+                                    <option value="10">不打折</option>
+                                    <option value="9">9折</option>
+                                    <option value="8">8折</option>
+                                    <option value="7">7折</option>
+                                    <option value="6">6折</option>
+                                    <option value="5">5折</option>
+                                    <option value="4">4折</option>
+                                    <option value="3">3折</option>
+                                    <option value="2">2折</option>
+                                    <option value="1">1折</option>
+                                </select>
+                            </div>
                             <button class="confirmBtn bg-green-500 text-white font-bold py-2 px-4 rounded-full transition-transform hover:scale-105 active:scale-95 shadow-md" data-timestamp="${order['時間戳記']}">
                                 確認出餐
                             </button>
@@ -436,6 +462,19 @@
                     </div>
                 `;
                 container.appendChild(orderCard);
+                
+                if (!isHistory) {
+                    const discountSelect = orderCard.querySelector('.discountSelect');
+                    const priceDisplay = orderCard.querySelector('.priceDisplay');
+                    
+                    discountSelect.addEventListener('change', (e) => {
+                        const discount = parseInt(e.target.value, 10);
+                        const newPrice = order.originalPrice * (discount / 10);
+                        order.finalPrice = newPrice;
+                        order.discountValue = discount;
+                        priceDisplay.textContent = `NT$${newPrice.toLocaleString()}`;
+                    });
+                }
             });
 
             if (!isHistory) {
@@ -444,7 +483,9 @@
                         const timestamp = e.target.dataset.timestamp;
                         const orderToProcess = allOrders.find(o => o['時間戳記'] === timestamp);
                         if (orderToProcess) {
-                            submitToForm(orderToProcess, '已出餐', e.target);
+                            const discountSelectElement = e.target.closest('.flex-col').querySelector('.discountSelect');
+                            orderToProcess.discountValue = discountSelectElement ? parseInt(discountSelectElement.value, 10) : 10;
+                            submitToForm(orderToProcess, '已出餐');
                         }
                     });
                 });
@@ -453,7 +494,9 @@
                         const timestamp = e.target.dataset.timestamp;
                         const orderToProcess = allOrders.find(o => o['時間戳記'] === timestamp);
                         if (orderToProcess) {
-                            submitToForm(orderToProcess, '已取消', e.target);
+                            const discountSelectElement = e.target.closest('.flex-col').querySelector('.discountSelect');
+                            orderToProcess.discountValue = discountSelectElement ? parseInt(discountSelectElement.value, 10) : 10;
+                            submitToForm(orderToProcess, '已取消');
                         }
                     });
                 });
